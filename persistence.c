@@ -5,6 +5,7 @@
 #include "budget.h"
 #include "category_index.h"
 #include "logger.h"
+#include "transaction.h"
 
 void loadTransactions(void)
 {
@@ -50,6 +51,12 @@ void loadTransactions(void)
     }
 
     fclose(fp);
+
+    /* Older files (saved before renumbering existed) can have
+       gaps or duplicate ids left over from deletions. Renumbering
+       here self-repairs that automatically the next time this
+       user logs in, instead of leaving it broken forever. */
+    renumberTransactionIds();
 }
 
 void saveTransactions(void)

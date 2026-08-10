@@ -7,6 +7,7 @@
 #include "persistence.h"
 #include "budget.h"
 #include "activity_log.h"
+#include "transaction.h"
 
 void addExpense(void)
 {
@@ -40,10 +41,10 @@ void addExpense(void)
         return;
     }
 
-    t.id = transactionCount + 1;
     getCurrentDate(t.date);
 
     (void)pthread_mutex_lock(&dataMutex);
+    t.id = nextTransactionId();
     transactions[transactionCount++] = t;
     saveTransactions();
     (void)pthread_mutex_unlock(&dataMutex);

@@ -86,6 +86,16 @@ int main(void)
 
                     startAutosaveThread();
 
+                    /* The activity log is one shared in-memory
+                       buffer for the whole running process (see
+                       activity_log.c) - without this reset, option
+                       19 would keep showing every previous user's
+                       history from this same run of the app, which
+                       is a real privacy problem, not just clutter.
+                       Resetting here means each login starts a
+                       clean, this-session-only activity feed. */
+                    resetActivityLog();
+
                     snprintf(logMsg, sizeof(logMsg), "Logged in as %s", currentUser);
                     logActivity(logMsg);
 

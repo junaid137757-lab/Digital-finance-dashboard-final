@@ -23,6 +23,28 @@ static int compareByDate(const void *a, const void *b)
     return strcmp(ta->date, tb->date);
 }
 
+int nextTransactionId(void)
+{
+    int maxId = 0;
+    int i;
+
+    for(i = 0; i < transactionCount; i++)
+    {
+        if(transactions[i].id > maxId)
+            maxId = transactions[i].id;
+    }
+
+    return maxId + 1;
+}
+
+void renumberTransactionIds(void)
+{
+    int i;
+
+    for(i = 0; i < transactionCount; i++)
+        transactions[i].id = i + 1;
+}
+
 void sortTransactionsByDate(void)
 {
     qsort(transactions, (size_t)transactionCount, sizeof(Transaction), compareByDate);
@@ -214,6 +236,7 @@ void deleteTransaction(void)
             transactions[i] = transactions[i + 1];
 
         transactionCount--;
+        renumberTransactionIds();
 
         saveTransactions();
 

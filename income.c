@@ -6,6 +6,7 @@
 #include "utility.h"
 #include "persistence.h"
 #include "activity_log.h"
+#include "transaction.h"
 
 void addIncome(void)
 {
@@ -39,10 +40,10 @@ void addIncome(void)
         return;
     }
 
-    t.id = transactionCount + 1;
     getCurrentDate(t.date);
 
     (void)pthread_mutex_lock(&dataMutex);
+    t.id = nextTransactionId();
     transactions[transactionCount++] = t;
     saveTransactions();
     (void)pthread_mutex_unlock(&dataMutex);
