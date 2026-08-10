@@ -1,0 +1,126 @@
+CC = gcc
+CFLAGS = -Wall -Wextra -Iinclude
+LDFLAGS = -pthread
+SRC = src/main.c src/globals.c src/utility.c src/notification.c \
+      src/authentication.c src/persistence.c src/income.c src/expense.c \
+      src/transaction.c src/budget.c src/savings_goal.c src/dashboard.c \
+      src/reports.c src/recommendation.c src/investment.c \
+      src/category_index.c src/activity_log.c src/logger.c src/autosave.c
+TARGET = financeapp
+
+# --- CUnit unit tests ------------------------------------------------
+# Requires libcunit1-dev / CUnit-devel. Tests link every module's .c
+# file except main.c (which owns the real main()) together with the
+# tests/test_*.c files.
+
+APP_SRC_NO_MAIN = src/globals.c src/utility.c src/notification.c \
+      src/authentication.c src/persistence.c src/income.c src/expense.c \
+      src/transaction.c src/budget.c src/savings_goal.c src/dashboard.c \
+      src/reports.c src/recommendation.c src/investment.c \
+      src/category_index.c src/activity_log.c src/logger.c src/autosave.c
+
+TEST_SRC = tests/test_runner.c tests/test_helpers.c \
+      tests/test_utility.c tests/test_notification.c tests/test_budget.c \
+      tests/test_persistence.c tests/test_authentication.c \
+      tests/test_income.c tests/test_expense.c tests/test_transaction.c \
+      tests/test_savings_goal.c tests/test_reports.c \
+      tests/test_recommendation.c tests/test_dashboard.c tests/test_investment.c \
+      tests/test_category_index.c tests/test_activity_log.c tests/test_logger.c \
+      tests/test_autosave.c
+
+TEST_TARGET = run_tests
+
+# --- Benchmark (not CUnit - standalone perf/capacity report) --------
+
+BENCH_SRC = $(APP_SRC_NO_MAIN) tests/test_helpers.c src/benchmark.c
+BENCH_TARGET = benchmark
+
+.PHONY: all clean test run unit-test benchmark data-dir cppcheck misra valgrind valgrind-app helgrind tsan optreport
+
+all: data-dir $(TARGET)
+
+# .dat files are runtime output, written into data/ (see persistence.c) -
+# make sure that directory exists before the app or tests can write to it.
+data-dir:
+	mkdir -p data
+
+$(TARGET): $(SRC)
+	$(CC) $(SRC) $(CFLAGS) $(LDFLAGS) -o $(TARGET)
+
+run: all
+	./$(TARGET)
+
+test: all
+	chmod +x test.sh
+	./test.sh
+
+unit-test: data-dir
+	$(CC) $(APP_SRC_NO_MAIN) $(TEST_SRC) $(CFLAGS) $(LDFLAGS) -Itests -lcunit -o $(TEST_TARGET)
+	./$(TEST_TARGET)
+
+benchmark: data-dir
+	$(CC) $(BENCH_SRC) $(CFLAGS) $(LDFLAGS) -Itests -o $(BENCH_TARGET)
+	./$(BENCH_TARGET)
+
+# --- Static analysis --------------------------------------------------
+# Requires cppcheck. Checks src/ and include/ only (not tests/, which
+# uses CUnit macros cppcheck doesn't understand and isn't shipped code).
+cppcheck:
+	cppcheck --enable=warning,style,performance,portability \
+	    --inconclusive --std=c11 --language=c \
+	    --suppress=missingIncludeSystem \
+	    -Iinclude src/
+
+# MISRA-C:2012 addon check. The MISRA rule *text* is copyrighted by
+# MIRA/BSI and isn't shipped here - cppcheck's misra.py addon still
+# reports rule numbers/violations without it, or point --rule-texts=
+# at your own copy of the rule summaries for full messages:
+#   cppcheck --addon=misra --rule-texts=/path/to/misra_rules.txt -Iinclude src/
+misra:
+	cppcheck --addon=misra --enable=all --inconclusive --std=c11 \
+	    --suppress=missingIncludeSystem \
+	    -Iinclude src/
+
+# --- Dynamic analysis ---------------------------------------------------
+# Requires valgrind. Runs the CUnit suite under Memcheck; --error-exitcode=1
+# makes `make valgrind` fail (non-zero exit) if any leak/error is found,
+# so it works as a CI gate as well as a local check.
+valgrind: data-dir
+	$(CC) $(APP_SRC_NO_MAIN) $(TEST_SRC) $(CFLAGS) $(LDFLAGS) -g -Itests -lcunit -o $(TEST_TARGET)
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
+	    --error-exitcode=1 ./$(TEST_TARGET)
+
+# Same, but against the interactive app itself for a specific session -
+# usage: make valgrind-app ARGS="1\nuser\nPass123!\nPass123!\n4\n"
+valgrind-app: all
+	printf "$(ARGS)" | valgrind --leak-check=full --show-leak-kinds=all \
+	    --track-origins=yes --error-exitcode=1 ./$(TARGET)
+
+# Requires valgrind (Helgrind is one of its tool modes, not a separate
+# install). Checks the CUnit suite - including test_autosave.c, which
+# actually starts/stops the background thread - for data races,
+# lock-order violations, and misused pthread API.
+helgrind: data-dir
+	$(CC) $(APP_SRC_NO_MAIN) $(TEST_SRC) $(CFLAGS) $(LDFLAGS) -g -Itests -lcunit -o $(TEST_TARGET)
+	valgrind --tool=helgrind --error-exitcode=1 ./$(TEST_TARGET)
+
+# ThreadSanitizer - a race detector built into GCC/Clang, usable as a
+# substitute for Helgrind wherever valgrind itself isn't installable
+# (e.g. this was used in place of Helgrind while developing this
+# feature). Much faster than Helgrind and catches the same class of
+# bug (unsynchronized concurrent access), though the two don't always
+# flag identical things - real Helgrind is still worth running too.
+tsan: data-dir
+	$(CC) $(APP_SRC_NO_MAIN) $(TEST_SRC) $(CFLAGS) -fsanitize=thread -g -Itests -lcunit -o run_tests_tsan
+	./run_tests_tsan
+
+# --- Optimization report (assembly size at -O0/-O1/-O2/-O3) -----------
+# Generates asm/O0..O3/*.s and optimization_report.md. See
+# tools/optimization_report.sh for details.
+optreport:
+	bash tools/optimization_report.sh
+
+clean:
+	rm -f $(TARGET) $(TEST_TARGET) $(BENCH_TARGET) run_tests_tsan
+	rm -f data/*.dat
+	rm -rf asm optimization_report.md financeapp_O0 financeapp_O1 financeapp_O2 financeapp_O3
