@@ -121,7 +121,10 @@ static void test_editTransaction_cancel(void)
 }
 
 /* deleteTransaction() should remove the matching entry, shift the
-   remaining ones down, and decrement the count. */
+   remaining ones down, decrement the count, and renumber the
+   survivor(s) so ids stay a dense 1..count sequence (see
+   renumberTransactionIds() in transaction.c) rather than keeping
+   their original, now-gapped id. */
 static void test_deleteTransaction_success(void)
 {
     th_reset_globals();
@@ -134,7 +137,7 @@ static void test_deleteTransaction_success(void)
     char *out = th_capture_stdout_end();
 
     CU_ASSERT_EQUAL(transactionCount, 1);
-    CU_ASSERT_EQUAL(transactions[0].id, 2);
+    CU_ASSERT_EQUAL(transactions[0].id, 1);
     CU_ASSERT_STRING_EQUAL(transactions[0].category, "Rent");
     CU_ASSERT(strstr(out, "Transaction Deleted Successfully") != NULL);
     free(out);
